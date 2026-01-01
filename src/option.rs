@@ -8,28 +8,28 @@ use std::{
 use crate::{ConfigItem, X11_BASE_RULES, X11_EXTRAS_RULES};
 
 #[derive(Debug, Deserialize, Clone)]
-pub struct XkbOptions {
+pub struct KeyboardOptions {
     #[serde(rename = "optionList")]
-    pub option_list: XkbOptionGroupList,
+    pub option_list: KeyboardOptionGroupList,
 }
 
 #[derive(Debug, Deserialize, Clone)]
-pub struct XkbOptionGroupList {
-    pub group: Vec<XkbOptionGroup>,
+pub struct KeyboardOptionGroupList {
+    pub group: Vec<KeyboardOptionGroup>,
 }
 
 #[derive(Debug, Deserialize, Clone)]
 #[serde(rename(deserialize = "group"))]
-pub struct XkbOptionGroup {
+pub struct KeyboardOptionGroup {
     #[serde(rename = "@allowMultipleSelection")]
     pub allow_multiple_selection: bool,
     #[serde(rename = "configItem")]
     pub config_item: ConfigItem,
     #[serde(rename = "option")]
-    pub xkb_option: Vec<XkbOption>,
+    pub keyboard_option: Vec<KeyboardOption>,
 }
 
-impl XkbOptionGroup {
+impl KeyboardOptionGroup {
     /// Fetches the name of the option group
     pub fn name(&self) -> &str {
         &self.config_item.name
@@ -41,8 +41,8 @@ impl XkbOptionGroup {
     }
 
     /// Fetches a list of possible options
-    pub fn options(&self) -> &Vec<XkbOption> {
-        self.xkb_option.as_ref()
+    pub fn options(&self) -> &Vec<KeyboardOption> {
+        self.keyboard_option.as_ref()
     }
 
     /// Is selecting multiple options allowed
@@ -52,39 +52,39 @@ impl XkbOptionGroup {
 }
 
 #[derive(Debug, Deserialize, Clone)]
-pub struct XkbOption {
+pub struct KeyboardOption {
     #[serde(rename = "configItem")]
     pub config_item: ConfigItem,
 }
 
 /// Fetches a list of keyboard options from a path.
-pub fn get_xkb_options(path: &str) -> io::Result<XkbOptions> {
+pub fn get_keyboard_options(path: &str) -> io::Result<KeyboardOptions> {
     xml::from_reader(BufReader::new(File::open(path)?))
         .map_err(|why| io::Error::new(io::ErrorKind::InvalidData, format!("{}", why)))
 }
 /// Fetches a list of keyboard options from `/usr/share/X11/xkb/rules/base.xml` or the file defined in the X11_BASE_RULES_XML environment variable.
-pub fn xkb_options() -> io::Result<XkbOptions> {
+pub fn keyboard_options() -> io::Result<KeyboardOptions> {
     if let Ok(x11_base_rules_xml) = std::env::var("X11_BASE_RULES_XML") {
-        get_xkb_options(&x11_base_rules_xml)
+        get_keyboard_options(&x11_base_rules_xml)
     } else {
-        get_xkb_options(X11_BASE_RULES)
+        get_keyboard_options(X11_BASE_RULES)
     }
 }
 
 /// Fetches a list of keyboard layouts from `/usr/share/X11/xkb/rules/base.extras.xml` or the file defined in the X11_EXTRA_RULES_XML environment variable.
-pub fn extra_xkb_options() -> io::Result<XkbOptions> {
+pub fn extra_keyboard_options() -> io::Result<KeyboardOptions> {
     if let Ok(x11_extra_rules_xml) = std::env::var("X11_EXTRA_RULES_XML") {
-        get_xkb_options(&x11_extra_rules_xml)
+        get_keyboard_options(&x11_extra_rules_xml)
     } else {
-        get_xkb_options(X11_EXTRAS_RULES)
+        get_keyboard_options(X11_EXTRAS_RULES)
     }
 }
 
 /// Fetches a list of keyboard options from `/usr/share/X11/xkb/rules/base.xml` and
 /// extends them with the list of keyboard options from `/usr/share/X11/xkb/rules/base.extras.xml`.
-pub fn all_keyboard_layouts() -> io::Result<XkbOptions> {
-    let base_rules = xkb_options();
-    let extras_rules = extra_xkb_options();
+pub fn all_keyboard_options() -> io::Result<KeyboardOptions> {
+    let base_rules = keyboard_options();
+    let extras_rules = extra_keyboard_options();
 
     match (base_rules, extras_rules) {
         (Ok(base_rules), Ok(extras_rules)) => Ok(merge_rules(base_rules, extras_rules)),
@@ -98,16 +98,16 @@ pub fn all_keyboard_layouts() -> io::Result<XkbOptions> {
         )),
     }
 }
-fn merge_rules(base: XkbOptions, extras: XkbOptions) -> XkbOptions {
-    XkbOptions {
+fn merge_rules(base: KeyboardOptions, extras: KeyboardOptions) -> KeyboardOptions {
+    KeyboardOptions {
         option_list: concat_group_lists(vec![base.option_list, extras.option_list]),
     }
 }
 
-fn concat_group_lists(groups: Vec<XkbOptionGroupList>) -> XkbOptionGroupList {
+fn concat_group_lists(groups: Vec<KeyboardOptionGroupList>) -> KeyboardOptionGroupList {
     let mut new_groups = vec![];
     for group in groups.into_iter() {
         new_groups.extend(group.group);
     }
-    XkbOptionGroupList { group: new_groups }
+    KeyboardOptionGroupList { group: new_groups }
 }

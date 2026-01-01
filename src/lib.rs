@@ -11,8 +11,13 @@ pub(crate) const X11_EXTRAS_RULES: &str = "/usr/share/X11/xkb/rules/base.extras.
 
 // Import these into the namespace to stay compatible with the older code in
 // cosmic-settings
+pub use layout::all_keyboard_layouts;
 pub use layout::extra_keyboard_layouts;
 pub use layout::keyboard_layouts;
+
+pub use option::all_keyboard_options;
+pub use option::extra_keyboard_options;
+pub use option::keyboard_options;
 
 /// Contains the name and description of a configuration.
 #[derive(Debug, Deserialize, Clone)]
