@@ -9,5 +9,5 @@ categories = [ "os::unix-apis" ]
 keywords = [ "xkd" ]
 
 [dependencies]
-serde-xml-rs = "0.6.0"
+serde-xml-rs = "0.8.2"
 serde = { version = "1.0.197", features = ["derive"] }
