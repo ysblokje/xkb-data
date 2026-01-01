@@ -5,6 +5,7 @@ use serde::Deserialize;
 
 pub mod layout;
 pub mod option;
+mod reader;
 
 pub(crate) const X11_BASE_RULES: &str = "/usr/share/X11/xkb/rules/base.xml";
 pub(crate) const X11_EXTRAS_RULES: &str = "/usr/share/X11/xkb/rules/base.extras.xml";

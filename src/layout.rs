@@ -1,11 +1,7 @@
 use serde::Deserialize;
-use serde_xml_rs as xml;
-use std::{
-    fs::File,
-    io::{self, BufReader},
-};
+use std::io;
 
-use crate::{ConfigItem, X11_BASE_RULES, X11_EXTRAS_RULES};
+use crate::{reader, ConfigItem, X11_BASE_RULES, X11_EXTRAS_RULES};
 
 /// A list of keyboard layouts parsed from `/usr/share/X11/xkb/rules/base.xml`.
 #[derive(Debug, Deserialize, Clone)]
@@ -85,8 +81,7 @@ impl KeyboardVariant {
 
 /// Fetches a list of keyboard layouts from a path.
 pub fn get_keyboard_layouts(path: &str) -> io::Result<KeyboardLayouts> {
-    xml::from_reader(BufReader::new(File::open(path)?))
-        .map_err(|why| io::Error::new(io::ErrorKind::InvalidData, format!("{}", why)))
+    reader::get_section(path)
 }
 
 /// Fetches a list of keyboard layouts from `/usr/share/X11/xkb/rules/base.xml` or the file defined in the X11_BASE_RULES_XML environment variable.

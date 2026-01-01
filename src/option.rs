@@ -1,11 +1,7 @@
 use serde::Deserialize;
-use serde_xml_rs as xml;
-use std::{
-    fs::File,
-    io::{self, BufReader},
-};
+use std::io;
 
-use crate::{ConfigItem, X11_BASE_RULES, X11_EXTRAS_RULES};
+use crate::{reader, ConfigItem, X11_BASE_RULES, X11_EXTRAS_RULES};
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct KeyboardOptions {
@@ -59,8 +55,7 @@ pub struct KeyboardOption {
 
 /// Fetches a list of keyboard options from a path.
 pub fn get_keyboard_options(path: &str) -> io::Result<KeyboardOptions> {
-    xml::from_reader(BufReader::new(File::open(path)?))
-        .map_err(|why| io::Error::new(io::ErrorKind::InvalidData, format!("{}", why)))
+    reader::get_section(path)
 }
 /// Fetches a list of keyboard options from `/usr/share/X11/xkb/rules/base.xml` or the file defined in the X11_BASE_RULES_XML environment variable.
 pub fn keyboard_options() -> io::Result<KeyboardOptions> {
