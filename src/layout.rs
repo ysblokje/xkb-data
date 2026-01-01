@@ -5,7 +5,7 @@ use std::{
     io::{self, BufReader},
 };
 
-use crate::{X11_BASE_RULES, X11_EXTRAS_RULES};
+use crate::{ConfigItem, X11_BASE_RULES, X11_EXTRAS_RULES};
 
 /// A list of keyboard layouts parsed from `/usr/share/X11/xkb/rules/base.xml`.
 #[derive(Debug, Deserialize, Clone)]
@@ -56,15 +56,6 @@ impl KeyboardLayout {
     pub fn variants(&self) -> Option<&Vec<KeyboardVariant>> {
         self.variant_list.as_ref().and_then(|x| x.variant.as_ref())
     }
-}
-
-/// Contains the name and description of a keyboard layout.
-#[derive(Debug, Deserialize, Clone)]
-pub struct ConfigItem {
-    pub name: String,
-    #[serde(rename = "shortDescription")]
-    pub short_description: Option<String>,
-    pub description: String,
 }
 
 /// A list of possible variants of a keyboard layout.

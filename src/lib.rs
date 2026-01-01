@@ -13,3 +13,12 @@ pub(crate) const X11_EXTRAS_RULES: &str = "/usr/share/X11/xkb/rules/base.extras.
 // cosmic-settings
 pub use layout::extra_keyboard_layouts;
 pub use layout::keyboard_layouts;
+
+/// Contains the name and description of a configuration.
+#[derive(Debug, Deserialize, Clone)]
+pub struct ConfigItem {
+    pub name: String,
+    #[serde(rename = "shortDescription")]
+    pub short_description: Option<String>,
+    pub description: String,
+}
