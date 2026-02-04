@@ -2,10 +2,16 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use serde::Deserialize;
-use serde_xml_rs as xml;
-use std::fs::File;
-use std::io::{self, BufReader};
+use std::io::{self};
 use std::path::PathBuf;
+
+use crate::section::{
+    all_sections, fetch_extra_section, fetch_section, fetch_user_section, read_section,
+};
+
+pub mod models;
+pub mod options;
+pub mod section;
 
 // As per XKB official configuration guide, on Linux we use `evdev.xml`
 #[cfg(target_os = "linux")]
@@ -44,7 +50,7 @@ impl KeyboardLayouts {
 /// A list of keyboard layouts.
 #[derive(Debug, Deserialize, Clone)]
 pub struct LayoutList {
-    pub layout: Vec<KeyboardLayout>,
+    layout: Vec<KeyboardLayout>,
 }
 
 /// A keyboard layout, which contains an optional list of variants, a name, and a description.
@@ -108,54 +114,24 @@ impl KeyboardVariant {
     }
 }
 
-/// Fetches a section from the xml file
-pub fn get_section<Section: for<'a> Deserialize<'a>>(path: &str) -> io::Result<Section> {
-    xml::from_reader(BufReader::new(File::open(path)?))
-        .map_err(|why| io::Error::new(io::ErrorKind::InvalidData, format!("{}", why)))
-}
-
 /// Fetches a list of keyboard layouts from a path.
 pub fn get_keyboard_layouts(path: &str) -> io::Result<KeyboardLayouts> {
-    xml::from_reader(BufReader::new(File::open(path)?))
-        .map_err(|why| io::Error::new(io::ErrorKind::InvalidData, format!("{}", why)))
+    read_section(path)
 }
 
 /// Fetches a list of keyboard layouts from the X11_BASE_RULES const or the file defined in the X11_BASE_RULES_XML environment variable.
 pub fn keyboard_layouts() -> io::Result<KeyboardLayouts> {
-    if let Ok(x11_base_rules_xml) = std::env::var("X11_BASE_RULES_XML") {
-        get_keyboard_layouts(&x11_base_rules_xml)
-    } else {
-        get_keyboard_layouts(X11_BASE_RULES)
-    }
+    fetch_section()
 }
 
 /// Fetches a list of keyboard layouts from the X11_EXTRAS_RULES const or the file defined in the X11_EXTRA_RULES_XML environment variable.
 pub fn extra_keyboard_layouts() -> io::Result<KeyboardLayouts> {
-    if let Ok(x11_extra_rules_xml) = std::env::var("X11_EXTRA_RULES_XML") {
-        get_keyboard_layouts(&x11_extra_rules_xml)
-    } else {
-        get_keyboard_layouts(X11_EXTRAS_RULES)
-    }
+    fetch_extra_section()
 }
 
 /// Fetches user-specific keyboard layouts from XDG config paths.
-/// On Linux, looks for `evdev.xml`, on other systems looks for `base.xml`.
-/// Returns all layouts found from these paths:
-/// 1. `$XDG_CONFIG_HOME/xkb/rules/` (defaults to `$HOME/.config/xkb/rules/`)
-/// 2. `$HOME/.xkb/rules/`
-/// Returns empty layouts if no files are found.
 pub fn user_keyboard_layouts() -> io::Result<KeyboardLayouts> {
-    let paths = user_xkb_rules_paths();
-
-    let layout_lists: Vec<LayoutList> = paths
-        .into_iter()
-        .filter_map(|path| get_keyboard_layouts(path.to_string_lossy().as_ref()).ok())
-        .map(|layouts| layouts.layout_list)
-        .collect();
-
-    Ok(KeyboardLayouts {
-        layout_list: concat_layout_lists(layout_lists),
-    })
+    fetch_user_section()
 }
 
 /// Returns the list of user XKB rules paths to check for a given rules file.
@@ -188,192 +164,54 @@ fn user_xkb_rules_paths() -> Vec<PathBuf> {
             paths.push(path);
         }
     }
-
     paths
 }
 
 /// Fetches a list of keyboard layouts from the system rules files and user config paths,
 /// merging them together.
 pub fn all_keyboard_layouts() -> io::Result<KeyboardLayouts> {
-    let base_rules = keyboard_layouts()?;
-    let extras_rules = extra_keyboard_layouts()?;
-    let user_rules = user_keyboard_layouts().unwrap_or(KeyboardLayouts {
-        layout_list: LayoutList { layout: vec![] },
-    });
-
-    let layout_lists = vec![
-        base_rules.layout_list,
-        extras_rules.layout_list,
-        user_rules.layout_list,
-    ];
-
-    Ok(KeyboardLayouts {
-        layout_list: concat_layout_lists(layout_lists),
-    })
+    all_sections()
 }
 
-fn merge_rules(base: KeyboardLayouts, extras: KeyboardLayouts) -> KeyboardLayouts {
-    KeyboardLayouts {
-        layout_list: concat_layout_lists(vec![base.layout_list, extras.layout_list]),
+/// A generic trait to access the Vec's
+///
+/// This helps DRY when it comes to reading different sections from the config
+/// files.
+///
+pub trait AccessList {
+    // The type that is stored in the list
+    type InnerType;
+    // read-only access to the embedded list
+    fn get_list(&self) -> &[Self::InnerType];
+    // read-write access to the embedded list
+    fn get_mut_list(&mut self) -> &mut [Self::InnerType];
+    // replace the embedded list
+    fn set_list(&mut self, list: Vec<Self::InnerType>);
+    // create a new object of type InnerType and fill with list
+    fn new(list: Vec<Self::InnerType>) -> Self;
+    // take ownership of the embedded list
+    fn take_list(self) -> Vec<Self::InnerType>;
+}
+
+impl AccessList for KeyboardLayouts {
+    type InnerType = KeyboardLayout;
+    fn get_list(&self) -> &[KeyboardLayout] {
+        self.layouts()
     }
-}
-
-fn concat_layout_lists(layouts: Vec<LayoutList>) -> LayoutList {
-    let mut new_layouts = vec![];
-    for layout_list in layouts.into_iter() {
-        new_layouts.extend(layout_list.layout);
+    fn get_mut_list(&mut self) -> &mut [KeyboardLayout] {
+        self.layouts_mut()
     }
-    return LayoutList {
-        layout: new_layouts,
-    };
-}
-
-// XKB options after this point
-//
-
-#[derive(Debug, Deserialize, Clone)]
-pub struct XkbOptions {
-    #[serde(rename = "optionList")]
-    pub option_list: XkbOptionGroupList,
-}
-
-#[derive(Debug, Deserialize, Clone)]
-pub struct XkbOptionGroupList {
-    pub group: Vec<XkbOptionGroup>,
-}
-
-#[derive(Debug, Deserialize, Clone)]
-#[serde(rename(deserialize = "group"))]
-pub struct XkbOptionGroup {
-    #[serde(rename = "@allowMultipleSelection")]
-    pub allow_multiple_selection: bool,
-    #[serde(rename = "configItem")]
-    pub config_item: ConfigItem,
-    #[serde(rename = "option")]
-    pub xkb_option: Vec<XkbOption>,
-}
-
-impl XkbOptionGroup {
-    /// Fetches the name of the option group
-    pub fn name(&self) -> &str {
-        &self.config_item.name
+    fn set_list(&mut self, list: Vec<KeyboardLayout>) {
+        self.layout_list.layout = list;
     }
 
-    /// Fetches a description of the option group
-    pub fn description(&self) -> &str {
-        &self.config_item.description
+    fn take_list(self) -> Vec<Self::InnerType> {
+        self.layout_list.layout
     }
 
-    /// Fetches a list of possible options
-    pub fn options(&self) -> &Vec<XkbOption> {
-        self.xkb_option.as_ref()
+    fn new(values: Vec<KeyboardLayout>) -> Self {
+        Self {
+            layout_list: LayoutList { layout: values },
+        }
     }
-
-    /// Is selecting multiple options allowed
-    pub fn multiple_options_allowed(&self) -> bool {
-        self.allow_multiple_selection
-    }
-}
-
-#[derive(Debug, Deserialize, Clone)]
-pub struct XkbOption {
-    #[serde(rename = "configItem")]
-    pub config_item: ConfigItem,
-}
-
-/// Fetches a list of keyboard options from a path.
-pub fn get_xkb_options(path: &str) -> io::Result<XkbOptions> {
-    get_section(path)
-}
-
-/// Fetches a list of keyboard options from `/usr/share/X11/xkb/rules/base.xml` or the file defined in the X11_BASE_RULES_XML environment variable.
-pub fn xkb_options() -> io::Result<XkbOptions> {
-    if let Ok(x11_base_rules_xml) = std::env::var("X11_BASE_RULES_XML") {
-        get_xkb_options(&x11_base_rules_xml)
-    } else {
-        get_xkb_options(X11_BASE_RULES)
-    }
-}
-
-/// Fetches a list of keyboard layouts from `/usr/share/X11/xkb/rules/base.extras.xml` or the file defined in the X11_EXTRA_RULES_XML environment variable.
-pub fn extra_xkb_options() -> io::Result<XkbOptions> {
-    if let Ok(x11_extra_rules_xml) = std::env::var("X11_EXTRA_RULES_XML") {
-        get_xkb_options(&x11_extra_rules_xml)
-    } else {
-        get_xkb_options(X11_EXTRAS_RULES)
-    }
-}
-
-/// Fetches a list of keyboard options from `/usr/share/X11/xkb/rules/base.xml` and
-/// extends them with the list of keyboard options from `/usr/share/X11/xkb/rules/base.extras.xml`.
-pub fn all_xkb_options() -> io::Result<XkbOptions> {
-    let base_rules = xkb_options();
-    let extras_rules = extra_xkb_options();
-
-    match (base_rules, extras_rules) {
-        (Ok(base_rules), Ok(extras_rules)) => Ok(merge_options(base_rules, extras_rules)),
-        (Err(why), _) => Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            format!("{}", why),
-        )),
-        (_, Err(why)) => Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            format!("{}", why),
-        )),
-    }
-}
-fn merge_options(base: XkbOptions, extras: XkbOptions) -> XkbOptions {
-    XkbOptions {
-        option_list: concat_group_lists(vec![base.option_list, extras.option_list]),
-    }
-}
-
-fn concat_group_lists(groups: Vec<XkbOptionGroupList>) -> XkbOptionGroupList {
-    let mut new_groups = vec![];
-    for group in groups.into_iter() {
-        new_groups.extend(group.group);
-    }
-    XkbOptionGroupList { group: new_groups }
-}
-
-// Keyboard models Section
-//
-
-#[derive(Debug, Deserialize, Clone)]
-pub struct KeyboardModels {
-    #[serde(rename = "modelList")]
-    pub model_list: KeyboardModelList,
-}
-
-#[derive(Debug, Deserialize, Clone)]
-pub struct KeyboardModelList {
-    pub model: Vec<KeyboardModel>,
-}
-
-#[derive(Debug, Deserialize, Clone)]
-#[serde(rename = "model")]
-pub struct KeyboardModel {
-    #[serde(rename = "configItem")]
-    pub config_item: ConfigItem,
-}
-
-#[derive(Debug, Deserialize, Clone)]
-pub struct ConfigRegistry {
-    #[serde(rename = "modelList")]
-    pub models: KeyboardModelList,
-    #[serde(rename = "layoutList")]
-    pub layouts: LayoutList,
-    #[serde(rename = "optionList")]
-    pub options: XkbOptionGroupList,
-}
-
-pub fn xkb_registry() -> io::Result<ConfigRegistry> {
-    get_section(X11_BASE_RULES)
-}
-pub fn extras_xkb_registry() -> io::Result<ConfigRegistry> {
-    get_section(X11_EXTRAS_RULES)
-}
-
-pub fn all_xkb_registries() -> io::Result<ConfigRegistry> {
-    todo!()
 }
